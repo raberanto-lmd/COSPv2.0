@@ -21,8 +21,10 @@ VPATH += $(DRIVER)
 
 # Makefile.conf needs to define $(F90), $(F90FLAGS), $(NC_LIB), $(NC_INC)
 include Makefile.conf
-F90FLAGS += $(NC_INC)
-LDFLAGS  += $(NC_LIB) -lnetcdff
+#F90FLAGS += $(NC_INC)
+#LDFLAGS  += $(NC_LIB) -lnetcdff
+F90FLAGS += $(NC_INC) -I$(NCDF_INC)
+LDFLAGS  += $(NC_LIB) -L${NCDF_LIB} -lnetcdff -lnetcdf
 
 LDFLAGS += -L. -lcosp -lsubcol
 
