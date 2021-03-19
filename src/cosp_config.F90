@@ -39,6 +39,7 @@
 ! Mar 2018 - R. Guzman        - Added LIDAR_NTYPE for the OPAQ diagnostics
 ! Apr 2018 - R. Guzman        - Added parameters for GROUND LIDAR and ATLID simulators
 ! Nov 2018 - T. Michibata     - Added CloudSat+MODIS Warmrain Diagnostics
+! Jul 2019 - R. Guzman        - Added paramters for CALIPSO AEROSOLS simulator
 !
 ! %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -402,6 +403,22 @@ MODULE MOD_COSP_CONFIG
               shape=(/2,40/))        
 
     ! ####################################################################################
+    ! Parameters used by the CALIPSO AEROSOLS simulator
+    ! #################################################################################### 
+    logical :: &
+         use_vgrid_aerosols                ! True=Use new vertical grid for
+                                           ! CALIPSO AEROSOLS outputs
+    integer,parameter  ::     &
+       LIDAR_AEROSOLS_FLAGS = 4            ! Flag 0 = No masking at all
+                                           ! Flag 1 = Cloud mask only
+                                           ! Flag 2 = Detection Threshold mask only
+                                           ! Flag 3 = Cloud + Detection Threshold mask
+    real(wp), PARAMETER :: atbmin  = 5.e-7 ! default: 5.e-7 Detection limit for aerosol
+    real(wp), PARAMETER :: c0      = 1.0   ! Detection limit coefficient for aerosol
+    real(wp), PARAMETER :: det1    = 0.5   ! 640km: 0.015, 320km: 0.031, 160km: 0.0625, 
+                                           !  80km: 0.125,  20km: 0.25,   05km: 0.5
+
+    ! ####################################################################################
     ! Parameters used by the GROUND LIDAR simulator
     ! #################################################################################### 
     ! GROUND LIDAR backscatter histogram bins 
@@ -453,5 +470,15 @@ MODULE MOD_COSP_CONFIG
        vgrid_zu,  & ! New grid tops
        vgrid_z,   & ! New grid center
        dz           ! dZ
+
+    ! ####################################################################################
+    ! New vertical grid used by CALIPSO AEROSOLS outputs (set up during initialization)
+    ! ####################################################################################
+    integer :: &
+         Nlvgrid_aerosols    ! Number of levels in New grid
+    real(wp),dimension(:),allocatable :: &
+       vgrid_zl_aerosols,  & ! New grid bottoms
+       vgrid_zu_aerosols,  & ! New grid tops
+       vgrid_z_aerosols      ! New grid center
 
 END MODULE MOD_COSP_CONFIG
