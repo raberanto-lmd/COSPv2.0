@@ -174,11 +174,11 @@ contains
     status = nf90_put_att(fileID,varID(85),"units",        "1")
     if (status .ne. nf90_NoERR) print*,trim(nf90_strerror(status))
     ! Levels for lidar aerosols diagnostics
-    status = nf90_def_var(fileID,"lev_aerosols",  nf90_float, (/dimID(19)/),varID(140))
+    status = nf90_def_var(fileID,"lev_aerosols",  nf90_float, (/dimID(19)/),varID(160))
     if (status .ne. nf90_NoERR) print*,trim(nf90_strerror(status))
-    status = nf90_put_att(fileID,varID(140),"long_name","level indices aerosols")
+    status = nf90_put_att(fileID,varID(160),"long_name","level indices aerosols")
     if (status .ne. nf90_NoERR) print*,trim(nf90_strerror(status))
-    status = nf90_put_att(fileID,varID(140),"units",        "1")
+    status = nf90_put_att(fileID,varID(160),"units",        "1")
     if (status .ne. nf90_NoERR) print*,trim(nf90_strerror(status))
 
     ! Subcolumms
@@ -1471,6 +1471,7 @@ contains
        status = nf90_put_att(fileID,varID(139),"standard_name", "cloud_area_fraction")
        if (status .ne. nf90_NoERR) print*,trim(nf90_strerror(status)) 
     endif    
+
     ! warm-rain occurrence frequency diagnostics
     if (associated(cospOUT%wr_occfreq_ntotal)) then
        status = nf90_def_var(fileID,"npdfcld",nf90_float, (/dimID(1)/),varID(140))
@@ -1542,7 +1543,7 @@ contains
        status = nf90_put_att(fileID,varID(147),"standard_name", "modis_in-cloud_optical_depth")
        if (status .ne. nf90_NoERR) print*,trim(nf90_strerror(status))
     endif 
-    
+
     ! ---------------------------------------------------------------------------------------
     ! Exit define mode
     ! ---------------------------------------------------------------------------------------
@@ -1580,7 +1581,7 @@ contains
     if (status .ne. nf90_NoERR) print*,trim(nf90_strerror(status))
     status = nf90_put_var(fileID,varID(83),loc)
     if (status .ne. nf90_NoERR) print*,trim(nf90_strerror(status))
-    status = nf90_put_var(fileID,varID(140),vgrid_z_aerosols)
+    status = nf90_put_var(fileID,varID(160),vgrid_z_aerosols)
     if (status .ne. nf90_NoERR) print*,trim(nf90_strerror(status))
 
     ! CALIPSO simulator output
@@ -2125,6 +2126,7 @@ contains
     
     ! Local variables
     integer,parameter :: NMAX_DIM=5
+ 
     integer :: Npoints,Nlevels,i,j,k,vrank,vdimid(NMAX_DIM),ncid,vid,ndims,nvars,ngatts, &
                recdim,dimsize(NMAX_DIM),errst,Na,Nb,Nc,Nd,Ne
     integer,dimension(:),allocatable :: plon,plat
