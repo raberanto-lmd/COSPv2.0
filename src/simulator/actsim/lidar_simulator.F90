@@ -373,26 +373,35 @@ contains
        !!! linear interpolation vertical regridding methods in order to avoid striping
        !!! features to appear in the mid-high levels of the atmosphere.
 
+       !!! Comments in the choice of the vertical subgridding routine 25/03/2021
+
        ph_in(:,1,:) = pplay(:,nlevels:1:-1)
-       call cosp_interp_new_grid(Npoints,1,Nlevels,zlev(:,nlevels:1:-1),zlev_half(:,nlevels:1:-1),&
-            ph_in,llm,vgrid_z(llm:1:-1),vgrid_zu(llm:1:-1),pplayFlip(:,1,llm:1:-1))
+!       call cosp_interp_new_grid(Npoints,1,Nlevels,zlev(:,nlevels:1:-1),zlev_half(:,nlevels:1:-1),&
+!            ph_in,llm,vgrid_z(llm:1:-1),vgrid_zu(llm:1:-1),pplayFlip(:,1,llm:1:-1))
+       call cosp_change_vertical_grid(Npoints,1,Nlevels,zlev(:,nlevels:1:-1),zlev_half(:,nlevels:1:-1),&
+            ph_in,llm,vgrid_zl(llm:1:-1),vgrid_zu(llm:1:-1),pplayFlip(:,1,llm:1:-1))
        betamol_in(:,1,:) = pmol(:,nlevels:1:-1)
-       call cosp_interp_new_grid(Npoints,1,Nlevels,zlev(:,nlevels:1:-1),zlev_half(:,nlevels:1:-1),&
-            betamol_in,llm,vgrid_z(llm:1:-1),vgrid_zu(llm:1:-1),betamolFlip(:,1,llm:1:-1))
-
-       call cosp_mixing_regrid_methods(Npoints,Ncol,Nlevels,zlev(:,nlevels:1:-1), &
-            zlev_half(:,nlevels:1:-1), pnorm(:,:,nlevels:1:-1),llm,vgrid_z(llm:1:-1), &
-            vgrid_zl(llm:1:-1),vgrid_zu(llm:1:-1), pnormFlip(:,:,llm:1:-1))
-
+!       call cosp_interp_new_grid(Npoints,1,Nlevels,zlev(:,nlevels:1:-1),zlev_half(:,nlevels:1:-1),&
+!            betamol_in,llm,vgrid_z(llm:1:-1),vgrid_zu(llm:1:-1),betamolFlip(:,1,llm:1:-1))
+       call cosp_change_vertical_grid(Npoints,1,Nlevels,zlev(:,nlevels:1:-1),zlev_half(:,nlevels:1:-1),&
+            betamol_in,llm,vgrid_zl(llm:1:-1),vgrid_zu(llm:1:-1),betamolFlip(:,1,llm:1:-1))
+!       call cosp_mixing_regrid_methods(Npoints,Ncol,Nlevels,zlev(:,nlevels:1:-1), &
+!            zlev_half(:,nlevels:1:-1), pnorm(:,:,nlevels:1:-1),llm,vgrid_z(llm:1:-1), &
+!            vgrid_zl(llm:1:-1),vgrid_zu(llm:1:-1), pnormFlip(:,:,llm:1:-1))
+       call cosp_change_vertical_grid(Npoints,Ncol,Nlevels,zlev(:,nlevels:1:-1),zlev_half(:,nlevels:1:-1),&
+            pnorm(:,:,nlevels:1:-1),llm,vgrid_zl(llm:1:-1),vgrid_zu(llm:1:-1),pnormFlip(:,:,llm:1:-1))
        if (lcalipso) then
           t_in(:,1,:)=tmp(:,nlevels:1:-1)
-          call cosp_mixing_regrid_methods(Npoints,1,Nlevels,zlev(:,nlevels:1:-1), &
-               zlev_half(:,nlevels:1:-1),t_in,llm,vgrid_z(llm:1:-1), &
-               vgrid_zl(llm:1:-1),vgrid_zu(llm:1:-1),tmpFlip(:,1,llm:1:-1))
-
-       call cosp_mixing_regrid_methods(Npoints,Ncol,Nlevels,zlev(:,nlevels:1:-1), &
-            zlev_half(:,nlevels:1:-1), pnorm_perp(:,:,nlevels:1:-1),llm,vgrid_z(llm:1:-1), &
-            vgrid_zl(llm:1:-1),vgrid_zu(llm:1:-1), pnorm_perpFlip(:,:,llm:1:-1))
+!          call cosp_mixing_regrid_methods(Npoints,1,Nlevels,zlev(:,nlevels:1:-1), &
+!               zlev_half(:,nlevels:1:-1),t_in,llm,vgrid_z(llm:1:-1), &
+!               vgrid_zl(llm:1:-1),vgrid_zu(llm:1:-1),tmpFlip(:,1,llm:1:-1))
+       call cosp_change_vertical_grid(Npoints,1,Nlevels,zlev(:,nlevels:1:-1),zlev_half(:,nlevels:1:-1),&
+               t_in,llm,vgrid_zl(llm:1:-1),vgrid_zu(llm:1:-1),tmpFlip(:,1,llm:1:-1))
+!       call cosp_mixing_regrid_methods(Npoints,Ncol,Nlevels,zlev(:,nlevels:1:-1), &
+!            zlev_half(:,nlevels:1:-1), pnorm_perp(:,:,nlevels:1:-1),llm,vgrid_z(llm:1:-1), &
+!            vgrid_zl(llm:1:-1),vgrid_zu(llm:1:-1), pnorm_perpFlip(:,:,llm:1:-1))
+       call cosp_change_vertical_grid(Npoints,Ncol,Nlevels,zlev(:,nlevels:1:-1),zlev_half(:,nlevels:1:-1),&
+               pnorm_perp(:,:,nlevels:1:-1),llm,vgrid_zl(llm:1:-1),vgrid_zu(llm:1:-1),pnorm_perpFlip(:,:,llm:1:-1))
        endif
     endif
 

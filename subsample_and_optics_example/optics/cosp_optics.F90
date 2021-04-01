@@ -538,7 +538,7 @@ contains
     INTEGER                                :: i, k, zi, zf, zinc, zoffset
 
     ! Local data
-    REAL(WP),PARAMETER :: rhoice     = 0.5e+03    ! Density of ice (kg/m3) 
+!   REAL(WP),PARAMETER :: rhoice     = 0.5e+03    ! Density of ice (kg/m3) 
     REAL(WP),PARAMETER :: Cmol_532nm = 6.2446e-32 ! Wavelength dependent
 
     if (lidar_freq .eq. 532) then
