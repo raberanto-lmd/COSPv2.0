@@ -136,7 +136,7 @@ contains
                                                   pmolFlip, pnormFlip, zlevFlip, &
                                                   alphaFlip 
     real(wp),dimension(npoints,llm_aerosols)   :: pmolm, sr, pnorm_c, cld_aerosols
-    real(wp) :: cloud_fraction_threshold = 99.
+    real(wp) :: cloud_fraction_threshold = 90.
 
     ! COSPv2 convention for spaceborne lidar (default)
        zi   = 1
