@@ -31,6 +31,8 @@
 ! April 2018 - R. Guzman - Added OPAQ diagnostics and Ground LIDar (GLID) simulator
 ! April 2018 - R. Guzman - Added ATLID simulator
 !   Nov 2018 - T. Michibata - Added CloudSat+MODIS Warmrain Diagnostics
+! August 2019 - R. Guzman - Added CALIPSO AEROSOLS simulator
+!
 ! %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 program cosp2_test
   use cosp_kinds,          only: wp                         
@@ -52,9 +54,13 @@ program cosp2_test
                                  tau_binBoundsV1p4,tau_binEdgesV1p4, tau_binCentersV1p4,  &
                                  grLidar532_histBsct,atlid_histBsct,vgrid_zu,vgrid_zl,    & 
                                  Nlvgrid_local  => Nlvgrid,                               &
-                                 vgrid_z_local  => vgrid_z,cloudsat_preclvl
+                                 vgrid_z_local  => vgrid_z,cloudsat_preclvl,              &
+                                 Nlvgrid_local_aerosols  => Nlvgrid_aerosols,             &
+                                 vgrid_z_local_aerosols  => vgrid_z_aerosols,             &
+                                 LIDAR_AEROSOLS_FLAGS
   use cosp_phys_constants, only: amw,amd,amO3,amCO2,amCH4,amN2O,amCO
-  use mod_cosp_io,         only: nc_read_input_file,write_cosp2_output
+  use mod_cosp_io,         only: nc_read_input_file,write_cosp2_output,                   &
+                                 nc_read_CALIPSO_observations_input_file
   USE mod_quickbeam_optics,only: size_distribution,hydro_class_init,quickbeam_optics,     &
                                  quickbeam_optics_init,gases
   use quickbeam,           only: radar_cfg
@@ -65,7 +71,7 @@ program cosp2_test
   USE mod_prec_scops,      ONLY: prec_scops
   USE MOD_COSP_UTILS,      ONLY: cosp_precip_mxratio
   use cosp_optics,         ONLY: cosp_simulator_optics,lidar_optics,modis_optics,         &
-                                 modis_optics_partition
+                                 modis_optics_partition,lidar_aerosols_optics
   use mod_cosp_stats,      ONLY: COSP_CHANGE_VERTICAL_GRID
   
   implicit none
@@ -115,6 +121,15 @@ program cosp2_test
   real(wp),dimension(:,:,:),allocatable,target :: &
        frac_out,  & ! Subcolumn cloud cover (0/1)
        Reff         ! Subcolumn effective radius
+  ! Input fields only needed for the lidar aerosols simulator
+  real(wp),dimension(:),allocatable,target :: &
+       surftype     ! 0=ocean, 1=ice, 2=desert
+  real(wp),dimension(:,:),allocatable,target :: &
+       alpha_aer, & ! Aerosol extinction
+       beta_aer,  & ! Aerosol 180-degree backscatter
+       beta_dst,  & ! Beta of dust
+       beta_smo,  & ! Beta of smoke
+       beta_ncl     ! Beta of sea salt
 
   ! Input namelist fields
   integer ::                      & !
@@ -152,6 +167,17 @@ program cosp2_test
        csat_vgrid,                & ! CloudSat vertical grid? 
        use_precipitation_fluxes     ! True if precipitation fluxes are input to the 
                                     ! algorithm 
+  ! Input namelist fields for lidar aerosols simulator
+  integer ::                      & !
+       Nlvgrid_aerosols             ! Number of vertical levels for aerosols outputs
+  real(wp),dimension(:),allocatable :: & 
+       vgrid_z_aerosols             ! mid-level altitude of the aerosols vertical grid
+  logical ::                      & !
+       lidar_aerosols,            & ! Activate/deactivate the lidar aerosols simulator
+       use_vgrid_aerosols,        & ! Use fixed vertical grid for aerosols outputs
+       use_obs_for_aerosols         ! Use CALIPSO observations to perform the cloud masking
+  character(len=64) ::            &
+       finput_aerosols_obs          ! Input NetCDF file
 
   integer,dimension(RTTOV_MAX_CHANNELS) :: &
        rttov_Channels               ! RTTOV: Channel numbers
@@ -172,7 +198,10 @@ program cosp2_test
        foutput, cloudsat_radar_freq, surface_radar, cloudsat_use_gas_abs,cloudsat_do_ray,&
        cloudsat_k2, cloudsat_micro_scheme, lidar_ice_type, use_precipitation_fluxes,     &
        rttov_platform, rttov_satellite, rttov_Instrument, rttov_Nchannels,               &
-       rttov_Channels, rttov_Surfem, rttov_ZenAng, co2, ch4, n2o, co
+       rttov_Channels, rttov_Surfem, rttov_ZenAng, co2, ch4, n2o, co,                    &
+       lidar_aerosols, use_vgrid_aerosols, nlvgrid_aerosols, use_obs_for_aerosols,       &
+       finput_aerosols_obs                                                              
+
 
   ! Output namelist
   logical :: Lcfaddbze94,Ldbze94,Latb532,LcfadLidarsr532,Lclcalipso,Lclhcalipso,         &
@@ -184,6 +213,9 @@ program cosp2_test
              Lclzopaquecalipso,Lclcalipsoopaque,Lclcalipsothin,Lclcalipsozopaque,        & 
              Lclcalipsoopacity,Lclopaquetemp,Lclthintemp,Lclzopaquetemp,Lclopaquemeanz,  &
              Lclthinmeanz,Lclthinemis,Lclopaquemeanzse,Lclthinmeanzse,Lclzopaquecalipsose,&
+             LcalipsoaerosolsSR0,LcalipsoaerosolsSR1,LcalipsoaerosolsSR2,LcalipsoaerosolsSR3, &
+             LcalipsoaerosolsATB0,LcalipsoaerosolsATB1,LcalipsoaerosolsATB2,LcalipsoaerosolsATB3, &
+             LcalipsoaerosolsEXT0,LcalipsoaerosolsEXT1,LcalipsoaerosolsEXT2,LcalipsoaerosolsEXT3, &
              LlidarBetaMol532gr,LcfadLidarsr532gr,Latb532gr,LclgrLidar532,LclhgrLidar532,&
              LcllgrLidar532,LclmgrLidar532,LcltgrLidar532,LlidarBetaMol355,              &
              LcfadLidarsr355,Latb355,Lclatlid,Lclhatlid,Lcllatlid,Lclmatlid,Lcltatlid,   &
@@ -208,6 +240,10 @@ program cosp2_test
                        Lclcalipsozopaque,Lclcalipsoopacity,Lclopaquetemp,Lclthintemp,    &
                        Lclzopaquetemp,Lclopaquemeanz,Lclthinmeanz,Lclthinemis,           &
                        Lclopaquemeanzse,Lclthinmeanzse,Lclzopaquecalipsose,              &
+                       LcalipsoaerosolsSR0,LcalipsoaerosolsSR1,LcalipsoaerosolsSR2,      &
+                       LcalipsoaerosolsSR3,LcalipsoaerosolsATB0,LcalipsoaerosolsATB1,    &
+                       LcalipsoaerosolsATB2,LcalipsoaerosolsATB3,LcalipsoaerosolsEXT0,   &
+                       LcalipsoaerosolsEXT1,LcalipsoaerosolsEXT2,LcalipsoaerosolsEXT3,   &
                        LlidarBetaMol532gr,LcfadLidarsr532gr,Latb532gr,LclgrLidar532,     &
                        LclhgrLidar532,LcllgrLidar532,LclmgrLidar532,LcltgrLidar532,      &
                        LlidarBetaMol355,LcfadLidarsr355,Latb355,Lclatlid,                &
@@ -232,6 +268,7 @@ program cosp2_test
        lmodis      = .false., & !
        lmisr       = .false., & !
        lcalipso    = .false., & !
+       lcalipsoaerosols = .false., & !
        lgrLidar532 = .false., & !
        latlid      = .false., & !
        lcloudsat   = .false., & !
@@ -315,13 +352,19 @@ program cosp2_test
            dem_c(Npoints,Nlevels),skt(Npoints),landmask(Npoints),                        &
            mr_ozone(Npoints,Nlevels),u_wind(Npoints),v_wind(Npoints),sunlit(Npoints),    &
            frac_out(Npoints,Ncolumns,Nlevels),surfelev(Npoints))
-
+  if (lidar_aerosols) then
+      allocate(surftype(Npoints),alpha_aer(Npoints,Nlevels),beta_aer(Npoints,Nlevels),   &
+               beta_dst(Npoints,Nlevels),beta_smo(Npoints,Nlevels),                      & 
+               beta_ncl(Npoints,Nlevels))
+  endif
   fileIN = trim(dinput)//trim(finput)
-  call nc_read_input_file(fileIN,Npoints,Nlevels,N_HYDRO,lon,lat,p,ph,zlev,zlev_half,    &
+    call nc_read_input_file(fileIN,Npoints,Nlevels,N_HYDRO,lon,lat,p,ph,zlev,zlev_half,  &
                           T,sh,rh,tca,cca,mr_lsliq,mr_lsice,mr_ccliq,mr_ccice,fl_lsrain, &
                           fl_lssnow,fl_lsgrpl,fl_ccrain,fl_ccsnow,Reff,dtau_s,dtau_c,    &
                           dem_s,dem_c,skt,landmask,mr_ozone,u_wind,v_wind,sunlit,        &
-                          emsfc_lw,geomode,Nlon,Nlat,surfelev)
+                          emsfc_lw,geomode,Nlon,Nlat,surfelev,                           &
+                          ! Below, optional fields only used for lidar aerosols simulator
+                          surftype,alpha_aer,beta_aer,beta_dst,beta_smo,beta_ncl)
   call cpu_time(driver_time(2))
 
   !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -334,6 +377,33 @@ program cosp2_test
        Lcllmodis .or. Ltautmodis .or. Ltauwmodis .or. Ltauimodis .or. Ltautlogmodis .or. &
        Ltauwlogmodis .or. Ltauilogmodis .or. Lreffclwmodis .or. Lreffclimodis .or.       &
        Lpctmodis .or. Llwpmodis .or. Liwpmodis .or. Lclmodis) Lmodis = .true.
+
+  ! At least one of the outputs AND the lidar_aerosols flag have to be .true.
+  ! to run the lidar aerosols simulator
+  if ( (LcalipsoaerosolsSR0 .or. LcalipsoaerosolsSR1 .or. LcalipsoaerosolsSR2 .or.      &
+        LcalipsoaerosolsSR3 .or. LcalipsoaerosolsATB0 .or. LcalipsoaerosolsATB1 .or.    &
+        LcalipsoaerosolsATB2 .or. LcalipsoaerosolsATB3 .or. LcalipsoaerosolsEXT0 .or.   &
+        LcalipsoaerosolsEXT1 .or. LcalipsoaerosolsEXT2 .or. LcalipsoaerosolsEXT3) .and. &
+       (lidar_aerosols) ) then
+       Lcalipsoaerosols = .true.
+    ! If no CALIPSO observations file is read in, then use the standard cloud fraction
+    ! diagnostic from the CALIPSO simulator to perform the cloud masking
+    if (.not. use_obs_for_aerosols) Lclcalipso = .true.
+  else
+    LcalipsoaerosolsSR0 = .false.
+    LcalipsoaerosolsSR1 = .false.
+    LcalipsoaerosolsSR2 = .false.
+    LcalipsoaerosolsSR3 = .false.
+    LcalipsoaerosolsATB0 = .false.
+    LcalipsoaerosolsATB1 = .false.
+    LcalipsoaerosolsATB2 = .false.
+    LcalipsoaerosolsATB3 = .false.
+    LcalipsoaerosolsEXT0 = .false.
+    LcalipsoaerosolsEXT1 = .false.
+    LcalipsoaerosolsEXT2 = .false.
+    LcalipsoaerosolsEXT3 = .false.
+  endif
+
   if (Lclcalipso2 .or. Lclcalipso .or.  Lclhcalipso .or. Lcllcalipso .or. Lclmcalipso    &
        .or. Lcltcalipso .or. Lcltlidarradar .or. Lclcalipsoliq .or. Lclcalipsoice .or.   &
        Lclcalipsoun .or. Lclcalipsotmp .or. Lclcalipsotmpliq .or. Lclcalipsotmpice .or.  &
@@ -390,11 +460,12 @@ program cosp2_test
   call hydro_class_init(lsingle,ldouble,sd)
 
   ! Initialize COSP simulator
-  call COSP_INIT(Lisccp, Lmodis, Lmisr, Lcloudsat, Lcalipso, LgrLidar532, Latlid,        &
-       Lparasol, Lrttov,                                                                 &
-       cloudsat_radar_freq, cloudsat_k2, cloudsat_use_gas_abs,                           &
+  call COSP_INIT(Lisccp, Lmodis, Lmisr, Lcloudsat, Lcalipso, Lcalipsoaerosols,           &
+       LgrLidar532, Latlid,        &
+       Lparasol, Lrttov, cloudsat_radar_freq, cloudsat_k2, cloudsat_use_gas_abs,         &
        cloudsat_do_ray, isccp_topheight, isccp_topheight_direction, surface_radar,       &
-       rcfg_cloudsat, use_vgrid, csat_vgrid, Nlvgrid, Nlevels, cloudsat_micro_scheme)
+       rcfg_cloudsat, use_vgrid, use_vgrid_aerosols, csat_vgrid, Nlvgrid,                &
+       Nlvgrid_aerosols, Nlevels, cloudsat_micro_scheme)
   call cpu_time(driver_time(3))
   
   !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -411,7 +482,7 @@ program cosp2_test
        LcfadLidarsr532, LcfadLidarsr532gr, LcfadLidarsr355, Lclcalipso2,                 & 
        Lclcalipso, LclgrLidar532, Lclatlid, Lclhcalipso, Lcllcalipso, Lclmcalipso,       & 
        Lcltcalipso, LclhgrLidar532, LcllgrLidar532, LclmgrLidar532, LcltgrLidar532,      & 
-       Lclhatlid, Lcllatlid, Lclmatlid, Lcltatlid, Lcltlidarradar,  Lcloudsat_tcc,             &
+       Lclhatlid, Lcllatlid, Lclmatlid, Lcltatlid, Lcltlidarradar,  Lcloudsat_tcc,       &
        Lcloudsat_tcc2, Lclcalipsoliq,        & 
        Lclcalipsoice, Lclcalipsoun, Lclcalipsotmp, Lclcalipsotmpliq, Lclcalipsotmpice,   &
        Lclcalipsotmpun, Lcltcalipsoliq, Lcltcalipsoice, Lcltcalipsoun, Lclhcalipsoliq,   &
@@ -420,11 +491,15 @@ program cosp2_test
        Lclzopaquecalipso, Lclcalipsoopaque, Lclcalipsothin, Lclcalipsozopaque,           & 
        Lclcalipsoopacity, Lclopaquetemp, Lclthintemp, Lclzopaquetemp, Lclopaquemeanz,    & 
        Lclthinmeanz, Lclthinemis, Lclopaquemeanzse, Lclthinmeanzse, Lclzopaquecalipsose, &
+       LcalipsoaerosolsSR0,LcalipsoaerosolsSR1,LcalipsoaerosolsSR2,LcalipsoaerosolsSR3,  &
+       LcalipsoaerosolsATB0,LcalipsoaerosolsATB1,LcalipsoaerosolsATB2,LcalipsoaerosolsATB3,&
+       LcalipsoaerosolsEXT0,LcalipsoaerosolsEXT1,LcalipsoaerosolsEXT2,LcalipsoaerosolsEXT3,&
        LcfadDbze94, Ldbze94, Lparasolrefl,                                               &
        Ltbrttov, Lptradarflag0,Lptradarflag1,Lptradarflag2,Lptradarflag3,Lptradarflag4,  &
        Lptradarflag5,Lptradarflag6,Lptradarflag7,Lptradarflag8,Lptradarflag9,Lradarpia,  &
        Lwr_occfreq, Lcfodd,                                                              &
-       Npoints, Ncolumns, Nlevels, Nlvgrid_local, rttov_Nchannels, cospOUT)
+       Npoints, Ncolumns, Nlevels, Nlvgrid_local, Nlvgrid_local_aerosols,          &
+       rttov_Nchannels, cospOUT)
 
   !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
   ! Break COSP up into pieces and loop over each COSP 'chunk'.
@@ -461,6 +536,7 @@ program cosp2_test
         call construct_cospstateIN(Nptsperit,nLevels,rttov_nChannels,cospstateIN)    
      endif
      call cpu_time(driver_time(4))
+!!!print*,'After construct cosp input types  '
 
      !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
      ! Populate input types with model fields.
@@ -484,6 +560,18 @@ program cosp2_test
      ! Height at interface (nlevels+1). Set lowermost interface to 0.
      cospstateIN%hgt_matrix_half(:,1:Nlevels) = zlev_half(start_idx:end_idx,Nlevels:1:-1) ! km
      cospstateIN%hgt_matrix_half(:,Nlevels+1) = 0._wp
+
+     ! lidar aerosols simulator specific variables
+     if (Lcalipsoaerosols) then
+     if (use_obs_for_aerosols) cospIN%obs_flag_calipsoaerosols  = 1
+       cospstateIN%surftype  = surftype(start_idx:end_idx)
+       cospstateIN%alpha_aer = alpha_aer(start_idx:end_idx,Nlevels:1:-1)
+       cospstateIN%beta_aer  = beta_aer(start_idx:end_idx,Nlevels:1:-1)
+       cospstateIN%beta_dst  = beta_dst(start_idx:end_idx,Nlevels:1:-1)
+       cospstateIN%beta_smo  = beta_smo(start_idx:end_idx,Nlevels:1:-1)
+       cospstateIN%beta_ncl  = beta_ncl(start_idx:end_idx,Nlevels:1:-1)
+     endif
+!!!print*,'After populate input types with model fields '
      
      !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
      ! Generate subcolumns and compute optical inputs.
@@ -499,6 +587,11 @@ program cosp2_test
           dtau_c(start_idx:end_idx,nLevels:1:-1),dtau_s(start_idx:end_idx,nLevels:1:-1),       &
           dem_c(start_idx:end_idx,nLevels:1:-1),dem_s(start_idx:end_idx,nLevels:1:-1),         &
           cospstateIN,cospIN)
+!!!print*,'After subsample and optics '
+
+     ! Read the CALIPSO observations file if needed
+     if (use_obs_for_aerosols) call nc_read_CALIPSO_observations_input_file()!cospIN, &
+!                                    finput_aerosols_obs)
 
      call cpu_time(driver_time(6))
     
@@ -807,6 +900,15 @@ contains
             cospIN%betatot_liq_calipso, cospIN%tautot_ice_calipso, cospIN%tautot_liq_calipso)
     endif
 
+    if (Lcalipsoaerosols) then
+       call lidar_aerosols_optics(nPoints, nLevels, Nlvgrid_local, 532,        &
+            cospstateIN%alpha_aer, cospstateIN%beta_aer, cospstateIN%pfull,    &
+            cospstateIN%phalf, cospstateIN%at,                                 &
+            cospIN%beta_mol_calipsoaerosols, cospIN%betatot_calipsoaerosols,   &
+            cospIN%tau_mol_calipsoaerosols, cospIN%tautot_calipsoaerosols,     &
+            cospIN%cloud_fraction_calipsoaerosols)
+    endif
+
     if (LgrLidar532) then
        call lidar_optics(nPoints, nColumns, nLevels, 4, lidar_ice_type, 532, .true.,       &
             mr_hydro(:,:,:,I_LSCLIQ),  mr_hydro(:,:,:,I_LSCICE), mr_hydro(:,:,:,I_CVCLIQ), &
@@ -945,6 +1047,8 @@ contains
     y%Nlevels  = Nlevels
     y%Npart    = 4
     y%Nrefl    = PARASOL_NREFL
+    y%Nlvgrid  = Nlvgrid_local
+    y%obs_flag_calipsoaerosols = 0
     allocate(y%frac_out(npoints,       ncolumns,nlevels))
 
     if (Lmodis .or. Lmisr .or. Lisccp) then
@@ -963,6 +1067,15 @@ contains
                 y%tautot_S_ice(npoints,   ncolumns        ),&
                 y%tautot_S_liq(npoints,   ncolumns        ))
     endif
+
+    if (Lcalipsoaerosols) then
+       allocate(y%betatot_calipsoaerosols(npoints,         nlevels),&
+                y%tautot_calipsoaerosols(npoints,          nlevels),&
+                y%beta_mol_calipsoaerosols(npoints,        nlevels),&
+                y%tau_mol_calipsoaerosols(npoints,         nlevels),&
+                y%cloud_fraction_calipsoaerosols(npoints,  Nlvgrid_local))
+    endif
+
 
     if (LgrLidar532) then
        allocate(y%beta_mol_grLidar532(npoints,          nlevels),& 
@@ -1012,6 +1125,12 @@ contains
              y%cloudIce(nPoints,nLevels),y%cloudLiq(nPoints,nLevels),y%surfelev(npoints),&
              y%fl_snow(nPoints,nLevels),y%fl_rain(nPoints,nLevels),y%seaice(npoints),    &
              y%tca(nPoints,nLevels),y%hgt_matrix_half(npoints,nlevels+1))
+    if (Lcalipsoaerosols) then
+      allocate(y%surftype(npoints), y%alpha_aer(npoints, nlevels),         &
+               y%beta_aer(npoints, nlevels), y%beta_dst(npoints, nlevels), &
+               y%beta_smo(npoints, nlevels), y%beta_ncl(npoints, nlevels))
+    endif
+
 
   end subroutine construct_cospstateIN
 
@@ -1047,12 +1166,20 @@ contains
                                     Lclcalipsoopacity,Lclopaquetemp,Lclthintemp,         & 
                                     Lclzopaquetemp,Lclopaquemeanz,Lclthinmeanz,          & 
                                     Lclthinemis,Lclopaquemeanzse,Lclthinmeanzse,         &
-                                    Lclzopaquecalipsose,LcfadDbze94,Ldbze94,Lparasolrefl,&
+                                    Lclzopaquecalipsose,LcalipsoaerosolsSR0,             &
+                                    LcalipsoaerosolsSR1,LcalipsoaerosolsSR2,             &
+                                    LcalipsoaerosolsSR3,LcalipsoaerosolsATB0,            &
+                                    LcalipsoaerosolsATB1,LcalipsoaerosolsATB2,           &
+                                    LcalipsoaerosolsATB3,LcalipsoaerosolsEXT0,           &
+                                    LcalipsoaerosolsEXT1,LcalipsoaerosolsEXT2,           &
+                                    LcalipsoaerosolsEXT3,                                &
+                                    LcfadDbze94,Ldbze94,Lparasolrefl,                    &
                                     Ltbrttov, Lptradarflag0,Lptradarflag1,Lptradarflag2, &
                                     Lptradarflag3,Lptradarflag4,Lptradarflag5,           &
                                     Lptradarflag6,Lptradarflag7,Lptradarflag8,           &
                                     Lptradarflag9,Lradarpia,Lwr_occfreq,Lcfodd,          &
-                                    Npoints,Ncolumns,Nlevels,Nlvgrid,Nchan,x)
+                                    Npoints,Ncolumns,Nlevels,                            &
+                                    Nlvgrid,Nlvgrid_aerosols,Nchan,x)
      ! Inputs
      logical,intent(in) :: &
          Lpctisccp,        & ! ISCCP mean cloud top pressure
@@ -1146,6 +1273,18 @@ contains
          Lclopaquemeanzse,   & ! CALIPSO opaque cloud altitude with respect to SE 
          Lclthinmeanzse,     & ! CALIPSO thin cloud altitude with respect to SE
          Lclzopaquecalipsose,& ! CALIPSO z_opaque altitude with respect to SE
+         LcalipsoaerosolsSR0,& ! CALIPSO AEROSOLS SR profiles  (gridbox/column scale)
+         LcalipsoaerosolsSR1,& ! CALIPSO AEROSOLS SR profiles  (gridbox/column scale)
+         LcalipsoaerosolsSR2,& ! CALIPSO AEROSOLS SR profiles  (gridbox/column scale)
+         LcalipsoaerosolsSR3,& ! CALIPSO AEROSOLS SR profiles  (gridbox/column scale)
+         LcalipsoaerosolsATB0,& ! CALIPSO AEROSOLS ATB profiles (gridbox/column scale)
+         LcalipsoaerosolsATB1,& ! CALIPSO AEROSOLS ATB profiles (gridbox/column scale)
+         LcalipsoaerosolsATB2,& ! CALIPSO AEROSOLS ATB profiles (gridbox/column scale)
+         LcalipsoaerosolsATB3,& ! CALIPSO AEROSOLS ATB profiles (gridbox/column scale)
+         LcalipsoaerosolsEXT0,& ! CALIPSO AEROSOLS EXTINCTION profiles (gridbox/column scale)
+         LcalipsoaerosolsEXT1,& ! CALIPSO AEROSOLS EXTINCTION profiles (gridbox/column scale)
+         LcalipsoaerosolsEXT2,& ! CALIPSO AEROSOLS EXTINCTION profiles (gridbox/column scale)
+         LcalipsoaerosolsEXT3,& ! CALIPSO AEROSOLS EXTINCTION profiles (gridbox/column scale)
          LcfadDbze94,      & ! CLOUDSAT radar reflectivity CFAD
          Ldbze94,          & ! CLOUDSAT radar reflectivity
          LparasolRefl,     & ! PARASOL reflectance
@@ -1169,6 +1308,7 @@ contains
           Ncolumns,        & ! Number of subgrid columns
           Nlevels,         & ! Number of model levels
           Nlvgrid,         & ! Number of levels in L3 stats computation
+          Nlvgrid_aerosols,& ! Number of levels in lidar aerosols outputs
           Nchan              ! Number of RTTOV channels  
           
      ! Outputs
@@ -1277,6 +1417,20 @@ contains
        allocate(x%calipso_temp_tot(Npoints,Nlevels))               
     endif
 
+    ! LIDAR AEROSOLS simulator
+    if (LcalipsoaerosolsSR0 .or. LcalipsoaerosolsSR1 .or. LcalipsoaerosolsSR2 .or.       &
+        LcalipsoaerosolsSR3) then
+       allocate(x%calipsoaerosols_sr(Npoints,Nlvgrid_aerosols,LIDAR_AEROSOLS_FLAGS))
+    endif
+    if (LcalipsoaerosolsATB0 .or. LcalipsoaerosolsATB1 .or. LcalipsoaerosolsATB2 .or.    &
+        LcalipsoaerosolsATB3) then
+       allocate(x%calipsoaerosols_atb(Npoints,Nlvgrid_aerosols,LIDAR_AEROSOLS_FLAGS))
+    endif
+    if (LcalipsoaerosolsEXT0 .or. LcalipsoaerosolsEXT1 .or. LcalipsoaerosolsEXT2 .or.    &
+        LcalipsoaerosolsEXT3) then
+       allocate(x%calipsoaerosols_ext(Npoints,Nlvgrid_aerosols,LIDAR_AEROSOLS_FLAGS))
+    endif
+
     ! GROUND LIDAR @ 532NM simulator
     if (LlidarBetaMol532gr) allocate(x%grLidar532_beta_mol(Npoints,Nlevels))
     if (Latb532gr)          allocate(x%grLidar532_beta_tot(Npoints,Ncolumns,Nlevels))
@@ -1365,6 +1519,13 @@ contains
     if (allocated(y%tau_mol_atlid))       deallocate(y%tau_mol_atlid) 
     if (allocated(y%tautot_atlid))        deallocate(y%tautot_atlid)
     if (allocated(y%fracPrecipIce))      deallocate(y%fracPrecipIce)
+    if (allocated(y%beta_mol_calipsoaerosols)) deallocate(y%beta_mol_calipsoaerosols)
+    if (allocated(y%betatot_calipsoaerosols))  deallocate(y%betatot_calipsoaerosols)  
+    if (allocated(y%tau_mol_calipsoaerosols))  deallocate(y%tau_mol_calipsoaerosols) 
+    if (allocated(y%tautot_calipsoaerosols))   deallocate(y%tautot_calipsoaerosols)  
+    if (allocated(y%cloud_fraction_calipsoaerosols)) &
+       deallocate(y%cloud_fraction_calipsoaerosols) 
+
   end subroutine destroy_cospIN
   !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
   ! SUBROUTINE destroy_cospstateIN     
@@ -1394,6 +1555,12 @@ contains
     if (allocated(y%tca))             deallocate(y%tca)
     if (allocated(y%hgt_matrix_half)) deallocate(y%hgt_matrix_half)    
     if (allocated(y%surfelev))        deallocate(y%surfelev)
+    if (allocated(y%surftype))        deallocate(y%surftype)
+    if (allocated(y%alpha_aer))       deallocate(y%alpha_aer)
+    if (allocated(y%beta_aer))        deallocate(y%beta_aer) 
+    if (allocated(y%beta_dst))        deallocate(y%beta_dst) 
+    if (allocated(y%beta_smo))        deallocate(y%beta_smo) 
+    if (allocated(y%beta_ncl))        deallocate(y%beta_ncl)
     
   end subroutine destroy_cospstateIN
   
@@ -1475,6 +1642,18 @@ contains
      if (associated(y%calipso_cfad_sr))          then
         deallocate(y%calipso_cfad_sr)
         nullify(y%calipso_cfad_sr)     
+     endif
+     if (associated(y%calipsoaerosols_sr))      then
+        deallocate(y%calipsoaerosols_sr)
+        nullify(y%calipsoaerosols_sr)
+     endif
+     if (associated(y%calipsoaerosols_atb))      then
+        deallocate(y%calipsoaerosols_atb)
+        nullify(y%calipsoaerosols_atb)
+     endif
+     if (associated(y%calipsoaerosols_ext))      then
+        deallocate(y%calipsoaerosols_ext)
+        nullify(y%calipsoaerosols_ext)
      endif
      if (associated(y%grLidar532_beta_mol))     then
         deallocate(y%grLidar532_beta_mol)
